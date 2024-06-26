@@ -1,0 +1,1 @@
+# how to set up the application and short motivation on major design decisions. We value greatly well documented code.
