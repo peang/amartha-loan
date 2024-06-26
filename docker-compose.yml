@@ -4,21 +4,24 @@ services:
     ports:
       - "8080:8080"
     depends_on:
-      - db
+      - mongodb
     environment:
       - DB_HOST=db
       - DB_USER=postgres
       - DB_PASSWORD=postgres
       - DB_NAME=mydb
 
-  db:
-    image: postgres:13
+  mongodb:
+    image: mongo:latest
     environment:
-      POSTGRES_DB: mydb
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
+      MONGO_INITDB_ROOT_USERNAME: root
+      MONGO_INITDB_ROOT_PASSWORD: root
+      MONGO_INITDB_DATABASE: mongodb
+    ports:
+      - "27017:27017"
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - mongodb_data:/data/db
+      - ./mongodb_init.js:/docker-entrypoint-initdb.d/init-db.js:ro 
 
 volumes:
-  postgres_data:
+  mongodb_data:

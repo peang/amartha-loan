@@ -3,33 +3,36 @@ package models
 import (
 	"time"
 
-	"github.com/uptrace/bun"
+	"go.mongodb.org/mongo-driver/bson/primitive"
 )
 
 type TaxiTrip struct {
-	bun.BaseModel `bun:"table:taxi_trips"`
+	UniqueKey            string    `bson:"unique_key"`
+	TaxiID               string    `bson:"taxi_id"`
+	TripStartTimestamp   time.Time `bson:"trip_start_timestamp"`
+	TripEndTimestamp     time.Time `bson:"trip_end_timestamp"`
+	TripSeconds          float64   `bson:"trip_seconds"`
+	TripMiles            float64   `bson:"trip_miles"`
+	PickupCensusTract    float64   `bson:"pickup_census_tract"`
+	DropoffCensusTract   float64   `bson:"dropoff_census_tract"`
+	PickupCommunityArea  float64   `bson:"pickup_community_area"`
+	DropoffCommunityArea float64   `bson:"dropoff_community_area"`
+	Fare                 float64   `bson:"fare"`
+	Tips                 float64   `bson:"tips"`
+	Tolls                float64   `bson:"tolls"`
+	Extras               float64   `bson:"extras"`
+	TripTotal            float64   `bson:"trip_total"`
+	PaymentType          string    `bson:"payment_type"`
+	Company              string    `bson:"company"`
+	PickupLatitude       float64   `bson:"pickup_latitude"`
+	PickupLongitude      float64   `bson:"pickup_longitude"`
+	PickupLocation       Point     `bson:"pickup_location"`
+	DropoffLatitude      float64   `bson:"dropoff_latitude"`
+	DropoffLongitude     float64   `bson:"dropoff_longitude"`
+	DropoffLocation      Point     `bson:"dropoff_location"`
+}
 
-	UniqueKey            string    `bun:"type:VARCHAR(255),pk"`
-	TaxiID               string    `bun:"type:VARCHAR(255)"`
-	TripStartTimestamp   time.Time `bun:"type:TIMESTAMP,index:idx_trip_start_timestamp"`
-	TripEndTimestamp     time.Time `bun:"type:TIMESTAMP"`
-	TripSeconds          float64   `bun:"type:INTEGER"`
-	TripMiles            float64   `bun:"type:FLOAT"`
-	PickupCensusTract    float64   `bun:"type:INTEGER"`
-	DropoffCensusTract   float64   `bun:"type:INTEGER"`
-	PickupCommunityArea  float64   `bun:"type:INTEGER"`
-	DropoffCommunityArea float64   `bun:"type:INTEGER"`
-	Fare                 float64   `bun:"type:FLOAT"`
-	Tips                 float64   `bun:"type:FLOAT"`
-	Tolls                float64   `bun:"type:FLOAT"`
-	Extras               float64   `bun:"type:FLOAT"`
-	TripTotal            float64   `bun:"type:FLOAT,index:idx_trip_total"`
-	PaymentType          string    `bun:"type:VARCHAR(255)"`
-	Company              string    `bun:"type:VARCHAR(255)"`
-	PickupLatitude       float64   `bun:"type:FLOAT"`
-	PickupLongitude      float64   `bun:"type:FLOAT"`
-	PickupLocation       string    `bun:"type:STRING"`
-	DropoffLatitude      float64   `bun:"type:FLOAT"`
-	DropoffLongitude     float64   `bun:"type:FLOAT"`
-	DropoffLocation      string    `bun:"type:STRING"`
+type Point struct {
+	Type        string      `bson:"type"`
+	Coordinates primitive.A `bson:"coordinates"`
 }

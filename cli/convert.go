@@ -2,17 +2,21 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"reflect"
 	"runtime"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/peang/gojek-taxi/configs"
 	"github.com/peang/gojek-taxi/models"
-	"github.com/uptrace/bun"
 	"github.com/xitongsys/parquet-go-source/local"
 	"github.com/xitongsys/parquet-go/reader"
+	"go.mongodb.org/mongo-driver/bson/primitive"
+	"go.mongodb.org/mongo-driver/mongo"
 )
 
 type taxiTrip struct {
@@ -43,7 +47,8 @@ type taxiTrip struct {
 
 func main() {
 	conf := configs.LoadConfig()
-	db := configs.LoadDatabase(conf)
+	mongo := configs.LoadDatabase(conf)
+	defer mongo.Disconnect(context.Background())
 
 	fr, err := local.NewLocalFileReader("datasets.parquet")
 	if err != nil {
@@ -59,7 +64,7 @@ func main() {
 	}
 	defer pr.ReadStop()
 
-	batchSize := runtime.NumCPU() * 50
+	batchSize := runtime.NumCPU() * 100
 	numRows := int(pr.GetNumRows())
 
 	tripChannel := make(chan taxiTrip, 20)
@@ -68,7 +73,7 @@ func main() {
 	wg.Add(batchSize)
 
 	for i := 0; i < batchSize; i++ {
-		go persistData(db, &wg, tripChannel)
+		go persistData(mongo, &wg, tripChannel)
 	}
 
 	for i := 0; i < numRows; i += batchSize {
@@ -91,13 +96,16 @@ func main() {
 	wg.Wait()
 }
 
-func persistData(db *bun.DB, wg *sync.WaitGroup, c <-chan taxiTrip) {
+func persistData(mongo *mongo.Client, wg *sync.WaitGroup, c <-chan taxiTrip) {
 	defer wg.Done()
-	ctx := context.TODO()
+	collection := mongo.Database("gojek").Collection("taxi_trips")
 
 	for trip := range c {
 		tripStartTime := ConvertTime(*trip.TripStartTimestamp)
 		tripEndTime := ConvertTime(*trip.TripEndTimestamp)
+		pickupLat, pickupLong, _ := ExtractLongitudeLatitude(trip.PickupLocation)
+		dropoffLat, dropoffLong, _ := ExtractLongitudeLatitude(trip.DropoffLocation)
+
 		model := models.TaxiTrip{
 			UniqueKey:            *trip.UniqueKey,
 			TaxiID:               *trip.TaxiID,
@@ -117,13 +125,22 @@ func persistData(db *bun.DB, wg *sync.WaitGroup, c <-chan taxiTrip) {
 			PaymentType:          *trip.PaymentType,
 			Company:              *trip.Company,
 			PickupLatitude:       NilCheck(trip.PickupLatitude).(float64),
-			PickupLocation:       NilCheck(trip.PickupLocation).(string),
-			DropoffLatitude:      NilCheck(trip.DropoffLatitude).(float64),
-			DropoffLongitude:     NilCheck(trip.DropoffLongitude).(float64),
-			DropoffLocation:      NilCheck(trip.DropoffLocation).(string),
+			PickupLocation: models.Point{
+				Type:        "Point",
+				Coordinates: primitive.A{pickupLat, pickupLong},
+			},
+			DropoffLatitude:  NilCheck(trip.DropoffLatitude).(float64),
+			DropoffLongitude: NilCheck(trip.DropoffLongitude).(float64),
+			DropoffLocation: models.Point{
+				Type:        "Point",
+				Coordinates: primitive.A{dropoffLat, dropoffLong},
+			},
 		}
 
-		db.NewInsert().Model(&model).Exec(ctx)
+		log.Println("Inserting . . .")
+		if _, err := collection.InsertOne(context.Background(), model); err != nil {
+			log.Println("Error Inserting : ", err)
+		}
 	}
 }
 
@@ -131,6 +148,7 @@ func NilCheck(ptr interface{}) interface{} {
 	v := reflect.ValueOf(ptr)
 	if v.Kind() != reflect.Ptr || v.IsNil() {
 		return reflect.Zero(v.Type().Elem()).Interface()
+
 	}
 	return v.Elem().Interface()
 }
@@ -141,4 +159,32 @@ func ConvertTime(baseTime int64) time.Time {
 	timestampNanoseconds := (timestampMicroseconds % 1e6) * 1e3
 
 	return time.Unix(timestampSeconds, timestampNanoseconds).UTC()
+}
+
+func ExtractLongitudeLatitude(point *string) (float64, float64, error) {
+	if point == nil {
+		return 0, 0, nil
+	}
+
+	pointStr := *point
+	pointStr = strings.TrimPrefix(pointStr, "POINT (")
+	pointStr = strings.TrimSuffix(pointStr, ")")
+
+	parts := strings.Split(pointStr, " ")
+
+	if len(parts) != 2 {
+		return 0, 0, fmt.Errorf("invalid point format: %s", pointStr)
+	}
+
+	longitude, err := strconv.ParseFloat(parts[0], 64)
+	if err != nil {
+		return 0, 0, fmt.Errorf("error parsing longitude: %v", err)
+	}
+
+	latitude, err := strconv.ParseFloat(parts[1], 64)
+	if err != nil {
+		return 0, 0, fmt.Errorf("error parsing latitude: %v", err)
+	}
+
+	return longitude, latitude, nil
 }
