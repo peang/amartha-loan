@@ -16,8 +16,9 @@ import (
 )
 
 type TaxiTripRepositoryInterface interface {
-	GetTotalTrips(ctx context.Context, startTime time.Time, endTime time.Time) (interface{}, error)
-	GetFareHeatmap(ctx context.Context, time time.Time) (interface{}, error)
+	GetTotalTrips(ctx context.Context, startTime time.Time, endTime time.Time) (*[]TotalTripResponse, error)
+	GetFareHeatmap(ctx context.Context, time time.Time) (*[]FareHeatmapResponse, error)
+	GetAverageSpeed(ctx context.Context, time time.Time) (*AverageSpeedResponse, error)
 }
 
 type TaxiTripRepositoryFilter struct {
@@ -28,9 +29,18 @@ type taxiTripRepository struct {
 	client *mongo.Client
 }
 
+type TotalTripResponse struct {
+	Date      string `json:"date"`
+	TotalTrip int32  `json:"total_trips"`
+}
+
 type FareHeatmapResponse struct {
 	S2ID string  `json:"s2id"`
 	Fare float64 `json:"fare"`
+}
+
+type AverageSpeedResponse struct {
+	AverageSpeed float64 `json:"average_speed"`
 }
 
 func NewTaxiTripRepository(c *mongo.Client) TaxiTripRepositoryInterface {
@@ -39,7 +49,7 @@ func NewTaxiTripRepository(c *mongo.Client) TaxiTripRepositoryInterface {
 	}
 }
 
-func (r *taxiTripRepository) GetTotalTrips(ctx context.Context, startTime time.Time, endTime time.Time) (interface{}, error) {
+func (r *taxiTripRepository) GetTotalTrips(ctx context.Context, startTime time.Time, endTime time.Time) (*[]TotalTripResponse, error) {
 	collection := r.client.Database("gojek").Collection("taxi_trips")
 
 	pipeline := mongo.Pipeline{
@@ -77,16 +87,16 @@ func (r *taxiTripRepository) GetTotalTrips(ctx context.Context, startTime time.T
 	}
 	defer cursor.Close(ctx)
 
-	var results []bson.M
+	var results []TotalTripResponse
 	for cursor.Next(ctx) {
 		var result bson.M
 		if err := cursor.Decode(&result); err != nil {
 			log.Fatal(err)
 		}
 
-		transformedResult := bson.M{
-			"date":        result["_id"],
-			"total_trips": result["total_trips"],
+		transformedResult := TotalTripResponse{
+			Date:      result["_id"].(string),
+			TotalTrip: result["total_trips"].(int32),
 		}
 
 		results = append(results, transformedResult)
@@ -96,10 +106,10 @@ func (r *taxiTripRepository) GetTotalTrips(ctx context.Context, startTime time.T
 		log.Fatal(err)
 	}
 
-	return results, nil
+	return &results, nil
 }
 
-func (r *taxiTripRepository) GetFareHeatmap(ctx context.Context, time time.Time) (interface{}, error) {
+func (r *taxiTripRepository) GetFareHeatmap(ctx context.Context, time time.Time) (*[]FareHeatmapResponse, error) {
 	collection := r.client.Database("gojek").Collection("taxi_trips")
 
 	nextDay := time.AddDate(0, 0, 1)
@@ -125,7 +135,7 @@ func (r *taxiTripRepository) GetFareHeatmap(ctx context.Context, time time.Time)
 
 	for i := 0; i <= 5; i++ {
 		wg.Add(1)
-		go heatmapWorker(&wg, &mt, chTrip, &results)
+		go fareHeatmapWorker(&wg, &mt, chTrip, &results)
 	}
 
 	for cursor.Next(ctx) {
@@ -139,10 +149,66 @@ func (r *taxiTripRepository) GetFareHeatmap(ctx context.Context, time time.Time)
 	close(chTrip)
 	wg.Wait()
 
-	return results, nil
+	return &results, nil
 }
 
-func heatmapWorker(wg *sync.WaitGroup, mutex *sync.Mutex, cursorChannel <-chan primitive.M, result *[]FareHeatmapResponse) error {
+func (r *taxiTripRepository) GetAverageSpeed(ctx context.Context, time time.Time) (*AverageSpeedResponse, error) {
+	collection := r.client.Database("gojek").Collection("taxi_trips")
+
+	nextDay := time.AddDate(0, 0, 1)
+	options := options.Find().SetBatchSize(100)
+
+	cursor, err := collection.Find(ctx, bson.M{
+		"trip_start_timestamp": bson.M{
+			"$gte": time,
+			"$lt":  nextDay,
+		},
+		"trip_seconds": bson.M{
+			"$ne": 0, // This is Importan because division by Zero could lead to NaN value
+		},
+	}, options)
+
+	if err != nil {
+		return nil, err
+	}
+	defer cursor.Close(ctx)
+
+	var totalSpeed float64
+	var totalData float64
+
+	chTrip := make(chan primitive.M, 10)
+	var wg sync.WaitGroup
+	var mt sync.Mutex
+
+	for i := 0; i <= 10; i++ {
+		wg.Add(1)
+		go averageSpeedWorker(&wg, &mt, chTrip, &totalSpeed, &totalData)
+	}
+
+	for cursor.Next(ctx) {
+		var trip bson.M
+		if err := cursor.Decode(&trip); err != nil {
+			return nil, err
+		}
+		chTrip <- trip
+	}
+
+	close(chTrip)
+	wg.Wait()
+
+	results := totalSpeed / totalData
+	resultsString := fmt.Sprintf("%.2f", results)
+	resultsFloat, err := strconv.ParseFloat(resultsString, 64)
+	if err != nil {
+		return nil, err
+	}
+
+	return &AverageSpeedResponse{
+		AverageSpeed: resultsFloat,
+	}, nil
+}
+
+func fareHeatmapWorker(wg *sync.WaitGroup, mutex *sync.Mutex, cursorChannel <-chan primitive.M, result *[]FareHeatmapResponse) error {
 	defer wg.Done()
 	s2Map := make(map[s2.CellID]struct {
 		totalFare float64
@@ -152,8 +218,6 @@ func heatmapWorker(wg *sync.WaitGroup, mutex *sync.Mutex, cursorChannel <-chan p
 	for trip := range cursorChannel {
 		lat, _ := trip["pickup_latitude"].(float64)
 		lng, _ := trip["pickup_longitude"].(float64)
-
-		fmt.Println(trip["trip_start_timestamp"])
 		cellID := s2.CellIDFromLatLng(s2.LatLngFromDegrees(lat, lng)).Parent(16)
 
 		fare, _ := trip["fare"].(float64)
@@ -189,6 +253,27 @@ func heatmapWorker(wg *sync.WaitGroup, mutex *sync.Mutex, cursorChannel <-chan p
 			Fare: parsedFloat,
 		})
 		mutex.Unlock()
+	}
+
+	return nil
+}
+
+func averageSpeedWorker(wg *sync.WaitGroup, mutex *sync.Mutex, cursorChannel <-chan primitive.M, totalSpeed *float64, totalData *float64) error {
+	defer wg.Done()
+
+	for trip := range cursorChannel {
+		tripTime, _ := trip["trip_seconds"].(float64)
+		tripRange, _ := trip["trip_miles"].(float64)
+
+		tripRangeKilometer := tripRange * 1.60934
+		tripSpeed := tripRangeKilometer / (tripTime / 3600)
+
+		mutex.Lock()
+		*totalSpeed += tripSpeed
+		*totalData += 1
+		mutex.Unlock()
+
+		fmt.Printf("Time %f, Range %f, Speed %f\n", tripTime, tripRange, tripSpeed)
 	}
 
 	return nil

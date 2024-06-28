@@ -21,6 +21,7 @@ func NewTripHandler(e *echo.Echo, taxiTripRepository repositories.TaxiTripReposi
 
 	e.GET("/total_trips", handler.getTotalTrips)
 	e.GET("/average_fare_heatmap", handler.getFareHeatmap)
+	e.GET("/average_speed_24hrs", handler.getAverageSpeed)
 
 	return handler
 }
@@ -109,7 +110,7 @@ func (h *tripHandler) getAverageSpeed(ctx echo.Context) error {
 		return utils.NewInternalServerError(ctx.Echo().AcquireContext(), err)
 	}
 
-	result, err := h.taxiTripRepository.GetFareHeatmap(ctx.Request().Context(), *parsedDate)
+	result, err := h.taxiTripRepository.GetAverageSpeed(ctx.Request().Context(), *parsedDate)
 	if err != nil {
 		return utils.NewInternalServerError(ctx.Echo().AcquireContext(), err)
 	}
