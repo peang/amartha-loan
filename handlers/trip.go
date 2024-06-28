@@ -20,6 +20,7 @@ func NewTripHandler(e *echo.Echo, taxiTripRepository repositories.TaxiTripReposi
 	}
 
 	e.GET("/total_trips", handler.getTotalTrips)
+	e.GET("/average_fare_heatmap", handler.getFareHeatmap)
 
 	return handler
 }
@@ -28,7 +29,7 @@ func (h *tripHandler) getTotalTrips(ctx echo.Context) error {
 	startDate := ctx.QueryParam("start")
 	endDate := ctx.QueryParam("end")
 
-	dto := dto.GetTotalTrip{
+	dto := dto.GetTotalTripDTO{
 		StartDate: startDate,
 		EndDate:   endDate,
 	}
@@ -50,7 +51,65 @@ func (h *tripHandler) getTotalTrips(ctx echo.Context) error {
 		return utils.NewInternalServerError(ctx.Echo().AcquireContext(), err)
 	}
 
-	result, err := h.taxiTripRepository.TotalTrips(ctx.Request().Context(), *parsedStartDate, *parsedEndDate)
+	result, err := h.taxiTripRepository.GetTotalTrips(ctx.Request().Context(), *parsedStartDate, *parsedEndDate)
+	if err != nil {
+		return utils.NewInternalServerError(ctx.Echo().AcquireContext(), err)
+	}
+
+	return ctx.JSON(http.StatusOK, utils.Response{
+		Data: result,
+	})
+}
+
+func (h *tripHandler) getFareHeatmap(ctx echo.Context) error {
+	date := ctx.QueryParam("date")
+
+	dto := dto.GetFareHeatmapDTO{
+		Date: date,
+	}
+
+	if err := ctx.Validate(dto); err != nil {
+		if _, ok := err.(validator.ValidationErrors); ok {
+			return utils.NewValidationError(ctx, err.(validator.ValidationErrors))
+		}
+		return err
+	}
+
+	parsedDate, err := utils.DateParser(date)
+	if err != nil {
+		return utils.NewInternalServerError(ctx.Echo().AcquireContext(), err)
+	}
+
+	result, err := h.taxiTripRepository.GetFareHeatmap(ctx.Request().Context(), *parsedDate)
+	if err != nil {
+		return utils.NewInternalServerError(ctx.Echo().AcquireContext(), err)
+	}
+
+	return ctx.JSON(http.StatusOK, utils.Response{
+		Data: result,
+	})
+}
+
+func (h *tripHandler) getAverageSpeed(ctx echo.Context) error {
+	date := ctx.QueryParam("date")
+
+	dto := dto.GetAverageSpeedDTO{
+		Date: date,
+	}
+
+	if err := ctx.Validate(dto); err != nil {
+		if _, ok := err.(validator.ValidationErrors); ok {
+			return utils.NewValidationError(ctx, err.(validator.ValidationErrors))
+		}
+		return err
+	}
+
+	parsedDate, err := utils.DateParser(date)
+	if err != nil {
+		return utils.NewInternalServerError(ctx.Echo().AcquireContext(), err)
+	}
+
+	result, err := h.taxiTripRepository.GetFareHeatmap(ctx.Request().Context(), *parsedDate)
 	if err != nil {
 		return utils.NewInternalServerError(ctx.Echo().AcquireContext(), err)
 	}

@@ -4,6 +4,7 @@ go 1.21.9
 
 require (
 	github.com/go-playground/validator/v10 v10.4.1
+	github.com/golang/geo v0.0.0-20230421003525-6adc56603217
 	github.com/joho/godotenv v1.3.0
 	github.com/labstack/echo/v4 v4.12.0
 	github.com/xitongsys/parquet-go v1.6.2
