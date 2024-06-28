@@ -10,3 +10,10 @@ func DateParser(date string) (*time.Time, error) {
 
 	return &parsed, nil
 }
+
+func GeneratePagination(page float64, perPage float64) (skip int64, limit int64) {
+	skipValue := (page - 1) * perPage
+	limitValue := perPage
+
+	return int64(skipValue), int64(limitValue)
+}

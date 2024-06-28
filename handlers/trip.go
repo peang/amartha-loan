@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"net/http"
+	"strconv"
 
 	"github.com/go-playground/validator/v10"
 	"github.com/labstack/echo/v4"
@@ -64,9 +65,29 @@ func (h *tripHandler) getTotalTrips(ctx echo.Context) error {
 
 func (h *tripHandler) getFareHeatmap(ctx echo.Context) error {
 	date := ctx.QueryParam("date")
+	page, _ := strconv.ParseFloat(ctx.QueryParam("page"), 64)
+	if page == 0 {
+		page = 1
+	}
+
+	perPage, _ := strconv.ParseFloat(ctx.QueryParam("perPage"), 64)
+	if perPage == 0 {
+		perPage = 10
+	}
+
+	if perPage > 100 {
+		perPage = 100 // fallback to protect memory
+	}
+
+	parsedDate, err := utils.DateParser(date)
+	if err != nil {
+		return utils.NewInternalServerError(ctx.Echo().AcquireContext(), err)
+	}
 
 	dto := dto.GetFareHeatmapDTO{
-		Date: date,
+		Date:    *parsedDate,
+		Page:    page,
+		PerPage: perPage,
 	}
 
 	if err := ctx.Validate(dto); err != nil {
@@ -76,19 +97,12 @@ func (h *tripHandler) getFareHeatmap(ctx echo.Context) error {
 		return err
 	}
 
-	parsedDate, err := utils.DateParser(date)
+	result, err := h.taxiTripRepository.GetFareHeatmap(ctx.Request().Context(), &dto)
 	if err != nil {
 		return utils.NewInternalServerError(ctx.Echo().AcquireContext(), err)
 	}
 
-	result, err := h.taxiTripRepository.GetFareHeatmap(ctx.Request().Context(), *parsedDate)
-	if err != nil {
-		return utils.NewInternalServerError(ctx.Echo().AcquireContext(), err)
-	}
-
-	return ctx.JSON(http.StatusOK, utils.Response{
-		Data: result,
-	})
+	return ctx.JSON(http.StatusOK, result)
 }
 
 func (h *tripHandler) getAverageSpeed(ctx echo.Context) error {

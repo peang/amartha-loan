@@ -9,6 +9,8 @@ import (
 	"time"
 
 	"github.com/golang/geo/s2"
+	"github.com/peang/gojek-taxi/dto"
+	"github.com/peang/gojek-taxi/utils"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
@@ -17,7 +19,7 @@ import (
 
 type TaxiTripRepositoryInterface interface {
 	GetTotalTrips(ctx context.Context, startTime time.Time, endTime time.Time) (*[]TotalTripResponse, error)
-	GetFareHeatmap(ctx context.Context, time time.Time) (*[]FareHeatmapResponse, error)
+	GetFareHeatmap(ctx context.Context, dto *dto.GetFareHeatmapDTO) (*FareHeatmapResponse, error)
 	GetAverageSpeed(ctx context.Context, time time.Time) (*AverageSpeedResponse, error)
 }
 
@@ -35,8 +37,11 @@ type TotalTripResponse struct {
 }
 
 type FareHeatmapResponse struct {
-	S2ID string  `json:"s2id"`
-	Fare float64 `json:"fare"`
+	Data interface{} `json:"data"`
+	Meta struct {
+		Page    int64
+		PerPage int64
+	} `json:"meta"`
 }
 
 type AverageSpeedResponse struct {
@@ -109,33 +114,35 @@ func (r *taxiTripRepository) GetTotalTrips(ctx context.Context, startTime time.T
 	return &results, nil
 }
 
-func (r *taxiTripRepository) GetFareHeatmap(ctx context.Context, time time.Time) (*[]FareHeatmapResponse, error) {
+func (r *taxiTripRepository) GetFareHeatmap(ctx context.Context, dto *dto.GetFareHeatmapDTO) (*FareHeatmapResponse, error) {
 	collection := r.client.Database("gojek").Collection("taxi_trips")
 
-	nextDay := time.AddDate(0, 0, 1)
-
-	options := options.Find().SetBatchSize(100)
+	nextDay := dto.Date.AddDate(0, 0, 1)
+	skip, limit := utils.GeneratePagination(dto.Page, dto.PerPage)
+	findOptions := options.Find()
+	findOptions.SetSkip(skip)
+	findOptions.SetLimit(limit)
 
 	cursor, err := collection.Find(ctx, bson.M{
 		"trip_start_timestamp": bson.M{
-			"$gte": time,
+			"$gte": dto.Date,
 			"$lt":  nextDay,
 		},
-	}, options)
+	}, findOptions)
 
 	if err != nil {
 		return nil, err
 	}
 	defer cursor.Close(ctx)
 
-	var results []FareHeatmapResponse
+	var data []interface{}
 	chTrip := make(chan primitive.M, 100)
 	var wg sync.WaitGroup
 	var mt sync.Mutex
 
 	for i := 0; i <= 5; i++ {
 		wg.Add(1)
-		go fareHeatmapWorker(&wg, &mt, chTrip, &results)
+		go fareHeatmapWorker(&wg, &mt, chTrip, &data)
 	}
 
 	for cursor.Next(ctx) {
@@ -149,7 +156,16 @@ func (r *taxiTripRepository) GetFareHeatmap(ctx context.Context, time time.Time)
 	close(chTrip)
 	wg.Wait()
 
-	return &results, nil
+	return &FareHeatmapResponse{
+		Data: data,
+		Meta: struct {
+			Page    int64
+			PerPage int64
+		}{
+			Page:    int64(dto.Page),
+			PerPage: int64(dto.PerPage),
+		},
+	}, nil
 }
 
 func (r *taxiTripRepository) GetAverageSpeed(ctx context.Context, time time.Time) (*AverageSpeedResponse, error) {
@@ -217,7 +233,7 @@ func (r *taxiTripRepository) GetAverageSpeed(ctx context.Context, time time.Time
 	}, nil
 }
 
-func fareHeatmapWorker(wg *sync.WaitGroup, mutex *sync.Mutex, cursorChannel <-chan primitive.M, result *[]FareHeatmapResponse) error {
+func fareHeatmapWorker(wg *sync.WaitGroup, mutex *sync.Mutex, cursorChannel <-chan primitive.M, result *[]interface{}) error {
 	defer wg.Done()
 	s2Map := make(map[s2.CellID]struct {
 		totalFare float64
@@ -257,7 +273,10 @@ func fareHeatmapWorker(wg *sync.WaitGroup, mutex *sync.Mutex, cursorChannel <-ch
 		}
 
 		mutex.Lock()
-		*result = append(*result, FareHeatmapResponse{
+		*result = append(*result, struct {
+			S2ID string
+			Fare float64
+		}{
 			S2ID: cellID.ToToken(),
 			Fare: parsedFloat,
 		})
