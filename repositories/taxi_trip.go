@@ -154,50 +154,59 @@ func (r *taxiTripRepository) GetFareHeatmap(ctx context.Context, time time.Time)
 
 func (r *taxiTripRepository) GetAverageSpeed(ctx context.Context, time time.Time) (*AverageSpeedResponse, error) {
 	collection := r.client.Database("gojek").Collection("taxi_trips")
-
 	nextDay := time.AddDate(0, 0, 1)
-	options := options.Find().SetBatchSize(100)
 
-	cursor, err := collection.Find(ctx, bson.M{
-		"trip_start_timestamp": bson.M{
-			"$gte": time,
-			"$lt":  nextDay,
+	pipeline := []bson.M{
+		{
+			"$match": bson.M{
+				"trip_start_timestamp": bson.M{
+					"$gte": time,
+					"$lt":  nextDay,
+				},
+				"trip_seconds": bson.M{
+					"$ne": 0,
+				},
+			},
 		},
-		"trip_seconds": bson.M{
-			"$ne": 0, // This is Importan because division by Zero could lead to NaN value
+		{
+			"$group": bson.M{
+				"_id": nil,
+				"total_seconds": bson.M{
+					"$sum": "$trip_seconds",
+				},
+				"total_miles": bson.M{
+					"$sum": "$trip_miles",
+				},
+			},
 		},
-	}, options)
+	}
+
+	cursor, err := collection.Aggregate(context.Background(), pipeline)
+	if err != nil {
+		log.Fatal(err)
+	}
 
 	if err != nil {
 		return nil, err
 	}
 	defer cursor.Close(ctx)
 
-	var totalSpeed float64
-	var totalData float64
-
-	chTrip := make(chan primitive.M, 10)
-	var wg sync.WaitGroup
-	var mt sync.Mutex
-
-	for i := 0; i <= 10; i++ {
-		wg.Add(1)
-		go averageSpeedWorker(&wg, &mt, chTrip, &totalSpeed, &totalData)
-	}
-
+	var totalHour, totalKilometer float64
 	for cursor.Next(ctx) {
-		var trip bson.M
-		if err := cursor.Decode(&trip); err != nil {
-			return nil, err
+		var result bson.M
+		if err := cursor.Decode(&result); err != nil {
+			log.Fatal(err)
 		}
-		chTrip <- trip
+
+		totalSeconds := result["total_seconds"]
+		totalMiles := result["total_miles"]
+
+		totalHour = totalSeconds.(float64) / 3600
+		totalKilometer = totalMiles.(float64) * 1.60934
 	}
 
-	close(chTrip)
-	wg.Wait()
-
-	results := totalSpeed / totalData
-	resultsString := fmt.Sprintf("%.2f", results)
+	speedAverage := totalKilometer / totalHour
+	resultsString := fmt.Sprintf("%.2f", speedAverage)
 	resultsFloat, err := strconv.ParseFloat(resultsString, 64)
 	if err != nil {
 		return nil, err
@@ -253,27 +262,6 @@ func fareHeatmapWorker(wg *sync.WaitGroup, mutex *sync.Mutex, cursorChannel <-ch
 			Fare: parsedFloat,
 		})
 		mutex.Unlock()
-	}
-
-	return nil
-}
-
-func averageSpeedWorker(wg *sync.WaitGroup, mutex *sync.Mutex, cursorChannel <-chan primitive.M, totalSpeed *float64, totalData *float64) error {
-	defer wg.Done()
-
-	for trip := range cursorChannel {
-		tripTime, _ := trip["trip_seconds"].(float64)
-		tripRange, _ := trip["trip_miles"].(float64)
-
-		tripRangeKilometer := tripRange * 1.60934
-		tripSpeed := tripRangeKilometer / (tripTime / 3600)
-
-		mutex.Lock()
-		*totalSpeed += tripSpeed
-		*totalData += 1
-		mutex.Unlock()
-
-		fmt.Printf("Time %f, Range %f, Speed %f\n", tripTime, tripRange, tripSpeed)
 	}
 
 	return nil

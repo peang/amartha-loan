@@ -45,7 +45,11 @@ type taxiTrip struct {
 	DropoffLocation      *string  `parquet:"name=dropoff_location, type=BYTE_ARRAY, convertedtype=UTF8, encoding=PLAIN_DICTIONARY"`
 }
 
+// 1m33.023855875s with 5 concurrencies
+// 1m26.783613042s with 100 concurrencies
 func main() {
+	startExecution := time.Now()
+
 	conf := configs.LoadConfig()
 	mongo := configs.LoadDatabase(conf)
 	defer mongo.Disconnect(context.Background())
@@ -64,16 +68,19 @@ func main() {
 	}
 	defer pr.ReadStop()
 
-	batchSize := runtime.NumCPU() * 100
+	multiplier := 5
+	batchSize := runtime.NumCPU() * multiplier
 	numRows := int(pr.GetNumRows())
 
 	tripChannel := make(chan taxiTrip, 20)
+	modelEscrow := make([]interface{}, 0, 50)
 
 	var wg sync.WaitGroup
-	wg.Add(batchSize)
+	var mt sync.Mutex
 
 	for i := 0; i < batchSize; i++ {
-		go persistData(mongo, &wg, tripChannel)
+		wg.Add(1)
+		go persistData(mongo, &wg, &mt, tripChannel, &modelEscrow)
 	}
 
 	for i := 0; i < numRows; i += batchSize {
@@ -94,13 +101,26 @@ func main() {
 
 	close(tripChannel)
 	wg.Wait()
+
+	fmt.Println(time.Since(startExecution))
 }
 
-func persistData(mongo *mongo.Client, wg *sync.WaitGroup, c <-chan taxiTrip) {
+func persistData(
+	mongo *mongo.Client,
+	wg *sync.WaitGroup,
+	mt *sync.Mutex,
+	c <-chan taxiTrip,
+	modelEscrow *[]interface{},
+) {
 	defer wg.Done()
 	collection := mongo.Database("gojek").Collection("taxi_trips")
 
-	for trip := range c {
+	for {
+		trip, open := <-c
+		if !open {
+			break
+		}
+
 		tripStartTime := ConvertTime(*trip.TripStartTimestamp)
 		tripEndTime := ConvertTime(*trip.TripEndTimestamp)
 		pickupLat, pickupLong, _ := ExtractLongitudeLatitude(trip.PickupLocation)
@@ -137,11 +157,30 @@ func persistData(mongo *mongo.Client, wg *sync.WaitGroup, c <-chan taxiTrip) {
 			},
 		}
 
-		log.Println("Inserting . . .")
-		if _, err := collection.InsertOne(context.Background(), model); err != nil {
-			log.Println("Error Inserting : ", err)
+		mt.Lock()
+		*modelEscrow = append(*modelEscrow, model)
+
+		if len(*modelEscrow) == 100 {
+			log.Println("Inserting . . .")
+			if _, err := collection.InsertMany(context.Background(), *modelEscrow); err != nil {
+				panic(err)
+			}
+
+			*modelEscrow = make([]interface{}, 0, 100)
 		}
+		mt.Unlock()
 	}
+
+	mt.Lock()
+	if len(*modelEscrow) > 0 {
+		log.Println("Final inserting . . .")
+		if _, err := collection.InsertMany(context.Background(), *modelEscrow); err != nil {
+			panic(err)
+		}
+
+		*modelEscrow = make([]interface{}, 0, 100)
+	}
+	mt.Unlock()
 }
 
 func NilCheck(ptr interface{}) interface{} {
