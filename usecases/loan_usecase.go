@@ -20,6 +20,7 @@ type LoanUsecaseInterface interface {
 	Approve(ctx context.Context, dto *dto_request.ApproveLoanDTO) (*models.Loan, error)
 	GetAvailableLoans(ctx context.Context, dto *dto_request.ApprovedLoanListDTO) (*[]models.Loan, int, error)
 	Invest(ctx context.Context, dto *dto_request.InvestLoanDTO) (*models.Investment, error)
+	Disburse(ctx context.Context, dto *dto_request.DisburseLoanDTO) (*models.Loan, error)
 }
 
 type loanUsecase struct {
@@ -188,4 +189,33 @@ func SendEmailWorker(wg *sync.WaitGroup, ch <-chan models.Investment) {
 	for investment := range ch {
 		fmt.Printf("Sending email to %s\n", investment.Investor.Email)
 	}
+}
+
+func (u *loanUsecase) Disburse(ctx context.Context, dto *dto_request.DisburseLoanDTO) (*models.Loan, error) {
+	loan, err := u.loanRepository.Detail(ctx, dto.LoanID)
+	if err != nil {
+		return nil, err
+	}
+
+	if loan == nil {
+		return nil, errors.New("loan_not_found")
+	}
+
+	if loan.Status != models.LoanStatusProposed {
+		return nil, errors.New("only_proposed_loan_allowed")
+	}
+
+	disburseAggreementUrl, err := u.fileService.Upload(dto.AggreementLetter)
+	if err != nil {
+		return nil, err
+	}
+
+	loan.Disburse(dto.FieldOfficerID, disburseAggreementUrl)
+
+	loan, err = u.loanRepository.Save(nil, ctx, loan)
+	if err != nil {
+		return nil, err
+	}
+
+	return loan, nil
 }

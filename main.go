@@ -32,7 +32,8 @@ func main() {
 	// Register Repositories
 	userRepository := repositories.NewUserRepository(db)
 	approvalRepository := repositories.NewApprovalRepository(db)
-	loanRepository := repositories.NewLoanRepository(db, approvalRepository)
+	disbursementRepository := repositories.NewDisbursementRepository(db)
+	loanRepository := repositories.NewLoanRepository(db, approvalRepository, disbursementRepository)
 	investmentRepository := repositories.NewInvestmentRepository(db, loanRepository)
 
 	// Register Services

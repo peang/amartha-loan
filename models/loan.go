@@ -78,6 +78,16 @@ func (l *Loan) Approve(fieldValidatorId uint, approvalFileUrl string) {
 	}
 }
 
+func (l *Loan) Disburse(fieldOfficerId uint, aggreementFileUrl string) {
+	l.Status = LoanStatusDisbursed
+
+	l.Disbursment = &Disbursment{
+		FieldOfficerID:    fieldOfficerId,
+		AggreementFileURL: aggreementFileUrl,
+		CreatedAt:         time.Now(),
+	}
+}
+
 func (l *Loan) Invest(amount float64) error {
 	if l.PrincipalAmount+amount > l.ProposedAmount {
 		return errors.New("loan_invested_amount_exceeds_proposed_amount")

@@ -37,6 +37,9 @@ func NewLoanHandler(
 	// For Investor user
 	loanGroup.GET("/available", handler.getListAvailable)
 	loanGroup.POST("/:id/invest", handler.invest)
+
+	// For Field Officer user
+	loanGroup.POST("/:id/disburse", handler.disburse)
 }
 
 func (h *loanHandler) propose(ctx echo.Context) error {
@@ -175,5 +178,53 @@ func (h *loanHandler) invest(ctx echo.Context) error {
 	return ctx.JSON(http.StatusCreated, utils.Response{
 		Message: "Invest Success",
 		Data:    dto_response.InvestmentDetailResponse(investment),
+	})
+}
+
+func (h *loanHandler) disburse(ctx echo.Context) error {
+	context := ctx.Get("payload").(utils.Payload)
+
+	dto := dto_request.DisburseLoanDTO{
+		LoanID:         ctx.Param("id"),
+		FieldOfficerID: context.ID,
+	}
+
+	form, err := ctx.MultipartForm()
+	if err != nil {
+		return err
+	}
+
+	files := form.File["file"]
+	if len(files) == 0 {
+		return ctx.JSON(http.StatusBadRequest, utils.Error{
+			Code:  http.StatusBadRequest,
+			Error: "No Prove Uploaded",
+		})
+	}
+	dto.AggreementLetter = files[0]
+
+	allowedExtensions := map[string]bool{
+		".pdf":  true,
+		".jpeg": true,
+	}
+	ext := filepath.Ext(dto.AggreementLetter.Filename)
+	if !allowedExtensions[ext] {
+		return ctx.JSON(http.StatusBadRequest, utils.Error{
+			Code:  http.StatusBadRequest,
+			Error: "FILE TYPE NOT ALLOWED",
+		})
+	}
+
+	loan, err := h.loanUseCase.Disburse(ctx.Request().Context(), &dto)
+	if err != nil {
+		return ctx.JSON(utils.GetErrorCode(err.Error()), utils.Error{
+			Code:  utils.GetErrorCode(err.Error()),
+			Error: err.Error(),
+		})
+	}
+
+	return ctx.JSON(http.StatusCreated, utils.Response{
+		Message: "Loan Disbursed",
+		Data:    dto_response.LoanDetailResponse(loan),
 	})
 }

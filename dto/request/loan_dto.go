@@ -23,3 +23,9 @@ type InvestLoanDTO struct {
 	InvestorID uint    `validate:"required"`
 	Amount     float64 `validate:"required" json:"amount"`
 }
+
+type DisburseLoanDTO struct {
+	LoanID           string                `validate:"required"`
+	FieldOfficerID   uint                  `validate:"required"`
+	AggreementLetter *multipart.FileHeader `validate:"required"`
+}

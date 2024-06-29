@@ -21,11 +21,16 @@ type LoanRepositoryFilter struct {
 }
 
 type loanRepository struct {
-	approvalRepository ApprovalRepositoryInterface
-	db                 *bun.DB
+	approvalRepository     ApprovalRepositoryInterface
+	disbursementRepository DisbursementRepositoryInterface
+	db                     *bun.DB
 }
 
-func NewLoanRepository(db *bun.DB, approvalRepository ApprovalRepositoryInterface) LoanRepositoryInterface {
+func NewLoanRepository(
+	db *bun.DB,
+	approvalRepository ApprovalRepositoryInterface,
+	disbursementRepository DisbursementRepositoryInterface,
+) LoanRepositoryInterface {
 	return &loanRepository{
 		approvalRepository: approvalRepository,
 		db:                 db,
@@ -48,6 +53,18 @@ func (r *loanRepository) Save(tx *bun.Tx, ctx context.Context, loan *models.Loan
 		}
 
 		loan.ApprovalID = &approval.ID
+	}
+
+	if loan.Status == models.LoanStatusDisbursed && loan.DisbursmentID == nil {
+		disbursement := loan.Disbursment
+
+		_, err := r.disbursementRepository.Save(ctx, disbursement)
+		if err != nil {
+			tx.Rollback()
+			return nil, err
+		}
+
+		loan.DisbursmentID = &disbursement.ID
 	}
 
 	_, err := r.db.NewInsert().Model(loan).On("CONFLICT (id) DO UPDATE").Returning("id").Exec(ctx)
