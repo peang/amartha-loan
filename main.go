@@ -17,8 +17,10 @@ import (
 
 func main() {
 	conf := configs.LoadConfig()
-	mongo := configs.LoadDatabase(conf)
-	defer mongo.Disconnect(context.Background())
+	db := configs.MongoDatabaseConnector{}
+
+	client := db.Connect(conf)
+	defer client.Disconnect(context.Background())
 
 	e := echo.New()
 	e.Use(middleware.Logger())
@@ -28,7 +30,7 @@ func main() {
 	validators.RegisterValidation("enddate", utils.ValidateEndDate)
 	e.Validator = &utils.Validator{Validator: validators}
 
-	taxiTripRepository := repositories.NewTaxiTripRepository(mongo)
+	taxiTripRepository := repositories.NewTaxiTripRepository(client)
 
 	handlers.NewTripHandler(e, taxiTripRepository)
 

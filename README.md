@@ -1,1 +1,2 @@
-# how to set up the application and short motivation on major design decisions. We value greatly well documented code.
+How to Start the Apps
+1. Execute `./bin/setup`

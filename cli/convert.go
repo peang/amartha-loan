@@ -51,8 +51,10 @@ func main() {
 	startExecution := time.Now()
 
 	conf := configs.LoadConfig()
-	mongo := configs.LoadDatabase(conf)
-	defer mongo.Disconnect(context.Background())
+	db := configs.MongoDatabaseConnector{}
+
+	client := db.Connect(conf)
+	defer client.Disconnect(context.Background())
 
 	fr, err := local.NewLocalFileReader("datasets.parquet")
 	if err != nil {
@@ -74,13 +76,16 @@ func main() {
 
 	tripChannel := make(chan taxiTrip, 20)
 	modelEscrow := make([]interface{}, 0, 50)
+	modelCountEscrow := 0
 
 	var wg sync.WaitGroup
 	var mt sync.Mutex
 
+	fmt.Println("Please Wait Converting Datasets to MongoDB ...")
+
 	for i := 0; i < batchSize; i++ {
 		wg.Add(1)
-		go persistData(mongo, &wg, &mt, tripChannel, &modelEscrow)
+		go persistData(client, &wg, &mt, tripChannel, &modelEscrow, &modelCountEscrow)
 	}
 
 	for i := 0; i < numRows; i += batchSize {
@@ -102,7 +107,7 @@ func main() {
 	close(tripChannel)
 	wg.Wait()
 
-	fmt.Println(time.Since(startExecution))
+	fmt.Printf("Converted %d of Data at %v", modelCountEscrow, time.Since(startExecution))
 }
 
 func persistData(
@@ -111,6 +116,7 @@ func persistData(
 	mt *sync.Mutex,
 	c <-chan taxiTrip,
 	modelEscrow *[]interface{},
+	modelCountEscrow *int,
 ) {
 	defer wg.Done()
 	collection := mongo.Database("gojek").Collection("taxi_trips")
@@ -161,7 +167,8 @@ func persistData(
 		*modelEscrow = append(*modelEscrow, model)
 
 		if len(*modelEscrow) == 100 {
-			log.Println("Inserting . . .")
+			*modelCountEscrow += len(*modelEscrow)
+			fmt.Printf("\rConverting %d of 3888425", *modelCountEscrow)
 			if _, err := collection.InsertMany(context.Background(), *modelEscrow); err != nil {
 				panic(err)
 			}
@@ -173,7 +180,8 @@ func persistData(
 
 	mt.Lock()
 	if len(*modelEscrow) > 0 {
-		log.Println("Final inserting . . .")
+		*modelCountEscrow += len(*modelEscrow)
+		fmt.Printf("\rConverting %d of 3888425", *modelCountEscrow)
 		if _, err := collection.InsertMany(context.Background(), *modelEscrow); err != nil {
 			panic(err)
 		}

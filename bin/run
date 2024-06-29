@@ -1,0 +1,4 @@
+#!/bin/bash
+
+echo "Setup Docker"
+docker-compose up -d

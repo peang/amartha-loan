@@ -6,3 +6,5 @@ db.taxi_trips.createIndex({ "trip_seconds": 1 }, { name: "trip_seconds_index" })
 
 db.taxi_trips.createIndex({ pickup_location: "2dsphere" });
 db.taxi_trips.createIndex({ dropoff_location: "2dsphere" });
+
+print("Indexes have been created");

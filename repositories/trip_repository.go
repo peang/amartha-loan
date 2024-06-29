@@ -27,25 +27,27 @@ type TaxiTripRepositoryFilter struct {
 	PickupCommunityArea int `json:"pickup_community_area"`
 }
 
-type taxiTripRepository struct {
-	client *mongo.Client
-}
-
 type TotalTripResponse struct {
 	Date      string `json:"date"`
 	TotalTrip int32  `json:"total_trips"`
 }
 
 type FareHeatmapResponse struct {
-	Data interface{} `json:"data"`
-	Meta struct {
-		Page    int64
-		PerPage int64
-	} `json:"meta"`
+	Data interface{}  `json:"data"`
+	Meta MetaResponse `json:"meta"`
+}
+
+type MetaResponse struct {
+	Page    int64 `json:"page"`
+	PerPage int64 `json:"perPage"`
 }
 
 type AverageSpeedResponse struct {
 	AverageSpeed float64 `json:"average_speed"`
+}
+
+type taxiTripRepository struct {
+	client *mongo.Client
 }
 
 func NewTaxiTripRepository(c *mongo.Client) TaxiTripRepositoryInterface {
@@ -158,10 +160,7 @@ func (r *taxiTripRepository) GetFareHeatmap(ctx context.Context, dto *dto.GetFar
 
 	return &FareHeatmapResponse{
 		Data: data,
-		Meta: struct {
-			Page    int64
-			PerPage int64
-		}{
+		Meta: MetaResponse{
 			Page:    int64(dto.Page),
 			PerPage: int64(dto.PerPage),
 		},

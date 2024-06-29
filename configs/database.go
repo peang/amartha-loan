@@ -9,7 +9,13 @@ import (
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
-func LoadDatabase(c *Config) *mongo.Client {
+type DatabaseConnector interface {
+	Connect(c *Config) (*mongo.Client, error)
+}
+
+type MongoDatabaseConnector struct{}
+
+func (m *MongoDatabaseConnector) Connect(c *Config) *mongo.Client {
 	clientOptions := options.Client().ApplyURI(
 		fmt.Sprintf("mongodb://%s:27017/%s", c.MongoHost, c.MongoDatabase),
 	).
