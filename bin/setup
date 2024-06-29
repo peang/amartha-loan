@@ -6,6 +6,13 @@ if [ ! -f datasets.parquet ]; then
     curl -L -o datasets.parquet "https://drive.usercontent.google.com/download?id=1QLBGFOoKw_3-iM58q4unWfwHmPqfnrYr&export=download&authuser=0&confirm=t&uuid=0e0a5b66-1b23-4d93-a9f8-4814b82a26ae&at=APZUnTWQH6Py1QF0cizaF7hzYyIJ%3A1719379161030"
 fi
 
+echo "Setup ENV"
+touch ".env"
+echo "MONGODB_HOST=localhost" >> .env
+echo "MONGODB_USERNAME=root" >> .env
+echo "MONGODB_PASSWORD=root" >> .env
+echo "MONGODB_DATABASE=gojek" >> .env
+
 echo "Installing Dependencies"
 go mod tidy && go mod vendor
 
@@ -17,4 +24,5 @@ docker-compose up -d --build
 wait
 go run cli/convert.go
 wait
+rm ".env"
 docker-compose down
