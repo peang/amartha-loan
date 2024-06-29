@@ -1,33 +1,44 @@
 package configs
 
 import (
-	"context"
+	"database/sql"
 	"fmt"
-	"log"
+	"runtime"
 
-	"go.mongodb.org/mongo-driver/mongo"
-	"go.mongodb.org/mongo-driver/mongo/options"
+	"github.com/uptrace/bun"
+	"github.com/uptrace/bun/dialect/pgdialect"
+	"github.com/uptrace/bun/driver/pgdriver"
+	"github.com/uptrace/bun/extra/bundebug"
 )
 
-type DatabaseConnector interface {
-	Connect(c *Config) (*mongo.Client, error)
-}
+func LoadDatabase(c *Config) *bun.DB {
+	dsn := fmt.Sprintf(
+		"postgres://%s:%s@%s/%s?sslmode=%s",
+		c.SQLUsername,
+		c.SQLPassword,
+		c.SQLHost,
+		c.SQLDatabase,
+		c.SQLSSL,
+	)
+	pgconn := pgdriver.NewConnector(
+		pgdriver.WithDSN(dsn),
+	)
 
-type MongoDatabaseConnector struct{}
-
-func (m *MongoDatabaseConnector) Connect(c *Config) *mongo.Client {
-	clientOptions := options.Client().ApplyURI(
-		fmt.Sprintf("mongodb://%s:27017/%s", c.MongoHost, c.MongoDatabase),
-	).
-		SetAuth(options.Credential{
-			Username:   c.MongoUsername,
-			Password:   c.MongoPassword,
-			AuthSource: "admin",
-		})
-	client, err := mongo.Connect(context.Background(), clientOptions)
-	if err != nil {
-		log.Panicf("Faild Mongo Connection : %s", err)
+	sqldb := sql.OpenDB(pgconn)
+	if c.Env == "production" {
+		maxOpenConns := 4 * runtime.GOMAXPROCS(0)
+		sqldb.SetMaxOpenConns(maxOpenConns)
+		sqldb.SetMaxIdleConns(maxOpenConns)
 	}
 
-	return client
+	db := bun.NewDB(sqldb, pgdialect.New())
+
+	if c.Env != "production" {
+		db.AddQueryHook(bundebug.NewQueryHook(
+			bundebug.WithVerbose(true),
+			bundebug.FromEnv("BUNDEBUG"),
+		))
+	}
+
+	return db
 }

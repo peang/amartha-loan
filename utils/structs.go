@@ -1,7 +1,9 @@
 package utils
 
 type Response struct {
-	Data interface{} `json:"data,omitempty"`
+	Message string      `json:"message"`
+	Data    interface{} `json:"data,omitempty"`
+	Meta    *Meta       `json:"meta,omitempty"`
 }
 
 type Error struct {

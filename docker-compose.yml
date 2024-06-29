@@ -4,24 +4,19 @@ services:
     ports:
       - "8080:8080"
     depends_on:
-      - mongodb
+      - sqlite
     environment:
-      - MONGODB_HOST=mongodb
-      - MONGODB_USERNAME=root
-      - MONGODB_PASSWORD=root
-      - MONGODB_DATABASE=gojek
+      - DB_HOST=sqlite
+      - DB_USERNAME=
+      - DB_PASSWORD=
+      - DB_NAME=gojek
 
-  mongodb:
-    image: mongo:latest
-    environment:
-      MONGO_INITDB_ROOT_USERNAME: root
-      MONGO_INITDB_ROOT_PASSWORD: root
-      MONGO_INITDB_DATABASE: gojek
-    ports:
-      - "27017:27017"
+  sqlite:
+    image: sqlite
     volumes:
-      - mongodb_data:/data/db
-      - ./mongodb_init.js:/docker-entrypoint-initdb.d/init-db.js:ro
+      - ./data:/data
+    ports:
+      - 3306:3306
 
 volumes:
   mongodb_data:

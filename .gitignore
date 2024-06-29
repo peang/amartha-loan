@@ -1,4 +1,4 @@
 .env
 tmp
 vendor
-datasets.parquet
+file_uploads/*.**

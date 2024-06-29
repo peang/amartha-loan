@@ -1,38 +1,48 @@
 package main
 
 import (
-	"context"
 	"net/http"
 	"os"
 	"os/signal"
 
-	"github.com/go-playground/validator/v10"
 	"github.com/labstack/echo/v4"
-	"github.com/labstack/echo/v4/middleware"
-	"github.com/peang/gojek-taxi/configs"
-	"github.com/peang/gojek-taxi/handlers"
-	"github.com/peang/gojek-taxi/repositories"
-	"github.com/peang/gojek-taxi/utils"
+	"github.com/peang/amartha-loan-service/configs"
+	"github.com/peang/amartha-loan-service/handlers"
+	middlewares "github.com/peang/amartha-loan-service/middlewares"
+	"github.com/peang/amartha-loan-service/repositories"
+	"github.com/peang/amartha-loan-service/services/file_services"
+	"github.com/peang/amartha-loan-service/usecases"
 )
 
 func main() {
 	conf := configs.LoadConfig()
-	db := configs.MongoDatabaseConnector{}
 
-	client := db.Connect(conf)
-	defer client.Disconnect(context.Background())
+	db := configs.LoadDatabase(conf)
+	defer db.Close()
+
+	enfocer, err := configs.NewCasbinEnfocer()
+	if err != nil {
+		panic(err)
+	}
+
+	middleware := middlewares.NewMiddleware(enfocer)
 
 	e := echo.New()
-	e.Use(middleware.Logger())
-	e.Use(middleware.Recover())
 
-	validators := validator.New()
-	validators.RegisterValidation("enddate", utils.ValidateEndDate)
-	e.Validator = &utils.Validator{Validator: validators}
+	// Register Repositories
+	userRepository := repositories.NewUserRepository(db)
+	approvalRepository := repositories.NewApprovalRepository(db)
+	loanRepository := repositories.NewLoanRepository(db, approvalRepository)
+	investmentRepository := repositories.NewInvestmentRepository(db, loanRepository)
 
-	taxiTripRepository := repositories.NewTaxiTripRepository(client)
+	// Register Services
+	fileService := file_services.NewLocalFileService()
 
-	handlers.NewTripHandler(e, taxiTripRepository)
+	// Register Usecases
+	loanUsecase := usecases.NewLoanUsecase(loanRepository, investmentRepository, fileService)
+
+	handlers.NewAuthHandler(e, userRepository)
+	handlers.NewLoanHandler(e, middleware, loanUsecase)
 
 	go func() {
 		if err := e.Start(":8080"); err != nil && err != http.ErrServerClosed {
