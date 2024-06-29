@@ -3,6 +3,7 @@ CREATE TABLE loans (
   uuid UUID NOT NULL,
   borrower_id BIGINT NOT NULL,
   approval_id BIGINT,
+  disbursement_id BIGINT,
   proposed_amount NUMERIC(10,2) NOT NULL,
   principal_amount NUMERIC(10,2),
   rate NUMERIC(10,2),
@@ -20,5 +21,6 @@ CREATE TABLE loans (
 CREATE INDEX idx_loan_status ON loans (status);
 CREATE INDEX idx_loan_borrower_id ON loans (borrower_id);
 CREATE INDEX idx_loan_approval_id ON loans (approval_id);
+CREATE INDEX idx_loan_disbursement_id ON loans (disbursement_id);
 CREATE INDEX idx_loan_proposed_amount ON loans (proposed_amount);
 CREATE INDEX idx_loan_principal_amount ON loans (principal_amount);

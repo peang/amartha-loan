@@ -39,6 +39,7 @@ type Loan struct {
 	UUID             uuid.UUID  `bun:"uuid"`
 	BorrowerID       uint       `bun:"borrower_id"`
 	ApprovalID       *uint      `bun:"approval_id"`
+	DisbursmentID    *uint      `bun:"disbursement_id"`
 	ProposedAmount   float64    `bun:"proposed_amount"`
 	PrincipalAmount  float64    `bun:"principal_amount"`
 	Rate             float64    `bun:"rate"`
@@ -48,7 +49,8 @@ type Loan struct {
 	CreatedAt        time.Time  `bun:"created_at"`
 	UpdatedAt        *time.Time `bun:"updated_at,nullzero"`
 
-	Approval *Approval `bun:"rel:has-one,join:approval_id=id"`
+	Approval    *Approval    `bun:"rel:has-one,join:approval_id=id"`
+	Disbursment *Disbursment `bun:"rel:has-one,join:disbursement_id=id"`
 }
 
 func NewPropose(
